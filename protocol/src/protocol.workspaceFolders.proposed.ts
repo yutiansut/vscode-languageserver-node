@@ -20,11 +20,38 @@ export interface WorkspaceFoldersClientCapabilities {
 	/**
 	 * The workspace client capabilities
 	 */
-	workspace: {
+	workspace?: {
 		/**
 		 * The client has support for workspace folders
 		 */
 		workspaceFolders?: boolean;
+	}
+}
+
+export interface WorkspaceFoldersServerCapabilities {
+	/**
+	 * The workspace server capabilities
+	 */
+	workspace?: {
+
+		workspaceFolders?: {
+
+			/**
+			 * The Server has support for workspace folders
+			 */
+			supported?: boolean;
+
+			/**
+			 * Whether the server wants to receive workspace folder
+			 * change notifications.
+			 *
+			 * If a strings is provided the string is treated as a ID
+			 * under which the notification is registed on the client
+			 * side. The ID can be used to unregister for these events
+			 * using the `client/unregisterCapability` request.
+			 */
+			changeNotifications?: string | boolean;
+		}
 	}
 }
 

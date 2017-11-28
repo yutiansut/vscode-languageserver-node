@@ -10,6 +10,7 @@ import * as proto from 'vscode-languageserver-protocol';
 import * as codeConverter from '../codeConverter';
 import * as protocolConverter from '../protocolConverter';
 import ProtocolCompletionItem from '../protocolCompletionItem';
+import * as Is from '../utils/is';
 
 import * as vscode from 'vscode';
 
@@ -93,7 +94,9 @@ suite('Protocol Converter', () => {
 		};
 
 		let result = p2c.asHover(hover);
-		deepEqual(result.contents, ['hover']);
+		strictEqual(result.contents.length, 1);
+		ok(result.contents[0] instanceof vscode.MarkdownString)
+		strictEqual((result.contents[0] as vscode.MarkdownString).value, 'hover');
 		strictEqual(result.range, undefined);
 
 		hover.range = {
@@ -306,6 +309,52 @@ suite('Protocol Converter', () => {
 		strictEqual(result.data, completionItem.data);
 	});
 
+	test('Completion Item Documentation as string', () => {
+		let completionItem: proto.CompletionItem = {
+			label: 'item',
+			documentation: 'doc'
+		};
+		let result = c2p.asCompletionItem(p2c.asCompletionItem(completionItem));
+		ok(Is.string(result.documentation) && result.documentation === 'doc');
+	});
+
+	test('Completion Item Documentation as PlainText', () => {
+		let completionItem: proto.CompletionItem = {
+			label: 'item',
+			documentation: {
+				kind: proto.MarkupKind.PlainText,
+				value: 'doc'
+			}
+		};
+		let result = c2p.asCompletionItem(p2c.asCompletionItem(completionItem));
+		strictEqual((result.documentation as proto.MarkupContent).kind, proto.MarkupKind.PlainText);
+		strictEqual((result.documentation as proto.MarkupContent).value, 'doc');
+	});
+
+	test('Completion Item Documentation as Markdown', () => {
+		let completionItem: proto.CompletionItem = {
+			label: 'item',
+			documentation: {
+				kind: proto.MarkupKind.Markdown,
+				value: '# Header'
+			}
+		};
+		let result = c2p.asCompletionItem(p2c.asCompletionItem(completionItem));
+		strictEqual((result.documentation as proto.MarkupContent).kind, proto.MarkupKind.Markdown);
+		strictEqual((result.documentation as proto.MarkupContent).value, '# Header');
+	});
+
+	test('Completion Item Kind Outside', () => {
+		let completionItem: proto.CompletionItem = {
+			label: 'item',
+			kind: Number.MAX_VALUE as any
+		};
+		let result = p2c.asCompletionItem(completionItem);
+		strictEqual(result.kind, vscode.CompletionItemKind.Text);
+
+		let back = c2p.asCompletionItem(result);
+		strictEqual(back.kind, Number.MAX_VALUE);
+	});
 
 	test('Completion Result', () => {
 		let completionResult: proto.CompletionList = {
@@ -495,6 +544,22 @@ suite('Protocol Converter', () => {
 		strictEqual(p2c.asSymbolInformations(undefined), undefined);
 		strictEqual(p2c.asSymbolInformations(null), undefined);
 		deepEqual(p2c.asSymbolInformations([]), []);
+	});
+
+	test('SymbolInformation Kind outside', () => {
+		let start: proto.Position = { line: 1, character: 2 };
+		let end: proto.Position = { line: 8, character: 9 };
+		let location: proto.Location = {
+			uri: 'file://localhost/folder/file',
+			range: { start, end }
+		};
+		let symbolInformation: proto.SymbolInformation = {
+			name: 'name',
+			kind: Number.MAX_VALUE as any,
+			location: location
+		};
+		let result = p2c.asSymbolInformation(symbolInformation);
+		strictEqual(result.kind, vscode.SymbolKind.Property);
 	});
 
 	test('Command', () => {

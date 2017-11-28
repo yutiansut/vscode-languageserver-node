@@ -4,7 +4,8 @@
  * ------------------------------------------------------------------------------------------ */
 'use strict';
 
-import { Event, Emitter, Disposable, ClientCapabilities, Proposed
+import {
+	Event, Emitter, Disposable, ClientCapabilities, Proposed
 } from 'vscode-languageserver-protocol';
 
 import { WorkspaceFeature } from './main';
@@ -21,7 +22,7 @@ export const WorkspaceFoldersFeature: WorkspaceFeature<WorkspaceFolders> = (Base
 		private _unregistration: Thenable<Disposable>;
 		public initialize(capabilities: ClientCapabilities): void {
 			let workspaceCapabilities = (capabilities as Proposed.WorkspaceFoldersClientCapabilities).workspace;
-			if (workspaceCapabilities.workspaceFolders) {
+			if (workspaceCapabilities && workspaceCapabilities.workspaceFolders) {
 				this._onDidChangeWorkspaceFolders = new Emitter<Proposed.WorkspaceFoldersChangeEvent>();
 				this.connection.onNotification(Proposed.DidChangeWorkspaceFoldersNotification.type, (params) => {
 					this._onDidChangeWorkspaceFolders.fire(params.event);

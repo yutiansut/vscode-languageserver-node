@@ -7,6 +7,13 @@
 
 /**
  * Position in a text document expressed as zero-based line and character offset.
+ * The offsets are based on a UTF-16 string representation. So a string of the form
+ * `a𐐀b` the character offset of the character `a` is 0, the character offset of `𐐀`
+ * is 1 and the character offset of b is 3 since `𐐀` is represented using two code
+ * units in UTF-16.
+ *
+ * Positions are line end character agnostic. So you can not specifiy a position that
+ * denotes `\r|\n` or `\n|` where `|` represents the character offset.
  */
 export interface Position {
 	/**
@@ -17,14 +24,10 @@ export interface Position {
 	/**
 	 * Character offset on a line in a document (zero-based). Assuming that the line is
 	 * represented as a string, the `character` value represents the gap between the
-	 * `character` and `character + 1`. Given the following line: 'a𐐀c', character 0 is
-	 * the gap between the start of the start and 'a' ('|a𐐀c'), character 1 is the gap
-	 * between 'a' and '𐐀' ('a|𐐀c') and character 2 is the gap between '𐐀' and 'b' ('a𐐀|c').
+	 * `character` and `character + 1`.
 	 *
-	 * The string 'a𐐀c' consist of 3 characters with valid character values being 0, 1, 2, 3
-	 * for that string. Note that the string encoded in UTF-16 is encoded using 4 code units
-	 * (the 𐐀 is encoded using two code units). The character offset is therefore encoding
-	 * independent.
+	 * If the character value is greater than the line length it defaults back to the
+	 * line length.
 	 */
 	character: number;
 }
@@ -53,6 +56,16 @@ export namespace Position {
 
 /**
  * A range in a text document expressed as (zero-based) start and end positions.
+ *
+ * If you want to specify a range that contains a line including the line ending
+ * caharacter(s) then use an end poosition denoting the start of the next line.
+ * For example:
+ * ```ts
+ * {
+ *     start: { line: 5, character: 23 }
+ *     end : { line 6, character : 0 }
+ * }
+ * ```
  */
 export interface Range {
 	/**
@@ -639,9 +652,9 @@ export namespace TextDocumentItem {
 	/**
 	 * Creates a new TextDocumentItem literal.
 	 * @param uri The document's uri.
-	 * @param uri The document's language identifier.
-	 * @param uri The document's version number.
-	 * @param uri The document's text.
+	 * @param languageId The document's language identifier.
+	 * @param version The document's version number.
+	 * @param text The document's text.
 	 */
 	export function create(uri: string, languageId: string, version: number, text: string): TextDocumentItem {
 		return { uri, languageId, version, text };
@@ -654,6 +667,62 @@ export namespace TextDocumentItem {
 		let candidate = value as TextDocumentItem;
 		return Is.defined(candidate) && Is.string(candidate.uri) && Is.string(candidate.languageId) && Is.number(candidate.version) && Is.string(candidate.text);
 	}
+}
+
+/**
+ * Describes the content type that a client supports in various
+ * result literals like `Hover`, `ParameterInfo` or `CompletionItem`.
+ *
+ * Please note that `MarkupKinds` must not start with a `$`. This kinds
+ * are reserved for internal usage.
+ */
+export namespace MarkupKind {
+	/**
+	 * Plain text is supported as a content format
+	 */
+	export const PlainText: 'plaintext' = 'plaintext';
+
+	/**
+	 * Markdown is supported as a content format
+	 */
+	export const Markdown: 'markdown' = 'markdown';
+}
+export type MarkupKind = 'plaintext' | 'markdown';
+
+/**
+ * A `MarkupContent` literal represents a string value which content is interpreted base on its
+ * kind flag. Currently the protocol supports `plaintext` and `markdown` as markup kinds.
+ *
+ * If the kind is `markdown` then the value can contain fenced code blocks like in GitHub issues.
+ * See https://help.github.com/articles/creating-and-highlighting-code-blocks/#syntax-highlighting
+ *
+ * Here is an example how such a string can be constructed using JavaScript / TypeScript:
+ * ```ts
+ * let markdown: MarkdownContent = {
+ *  kind: MarkupKind.Markdown,
+ *	value: [
+ *		'# Header',
+ *		'Some text',
+ *		'```typescript',
+ *		'someCode();',
+ *		'```'
+ *	].join('\n')
+ * };
+ * ```
+ *
+ * *Please Note* that clients might sanitize the return markdown. A client could decide to
+ * remove HTML from the markdown to avoid script execution.
+ */
+export interface MarkupContent {
+	/**
+	 * The type of the Markup
+	 */
+	kind: MarkupKind;
+
+	/**
+	 * The content itself
+	 */
+	value: string;
 }
 
 /**
@@ -678,9 +747,16 @@ export namespace CompletionItemKind {
 	export const Color: 16 = 16;
 	export const File: 17 = 17;
 	export const Reference: 18 = 18;
+	export const Folder: 19 = 19;
+	export const EnumMember: 20 = 20;
+	export const Constant: 21 = 21;
+	export const Struct: 22 = 22;
+	export const Event: 23 = 23;
+	export const Operator: 24 = 24;
+	export const TypeParameter: 25 = 25;
 }
 
-export type CompletionItemKind = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18;
+export type CompletionItemKind = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 | 21 | 22 | 23 | 24 | 25;
 
 
 /**
@@ -736,7 +812,7 @@ export interface CompletionItem {
 	/**
 	 * A human-readable string that represents a doc-comment.
 	 */
-	documentation?: string;
+	documentation?: string | MarkupContent;
 
 	/**
 	 * A string that shoud be used when comparing this item
@@ -753,9 +829,18 @@ export interface CompletionItem {
 	filterText?: string;
 
 	/**
-	 * A string that should be inserted a document when selecting
+	 * A string that should be inserted into a document when selecting
 	 * this completion. When `falsy` the [label](#CompletionItem.label)
 	 * is used.
+	 *
+	 * The `insertText` is subject to interpretation by the client side.
+	 * Some tools might not take the string literally. For example
+	 * VS Code when code complete is requested in this example `con<cursor position>`
+	 * and a completion item with an `insertText` of `console` is provided it
+	 * will only insert `sole`. Therefore it is recommended to use `textEdit` instead
+	 * since it avoids additional client side interpretation.
+	 *
+	 * @deprecated Use textEdit instead.
 	 */
 	insertText?: string;
 
@@ -769,6 +854,9 @@ export interface CompletionItem {
 	 * An [edit](#TextEdit) which is applied to a document when selecting
 	 * this completion. When an edit is provided the value of
 	 * [insertText](#CompletionItem.insertText) is ignored.
+	 *
+	 * *Note:* The text edit's range must be a [single line] and it must contain the position
+	 * at which completion has been requested.
 	 */
 	textEdit?: TextEdit;
 
@@ -778,6 +866,13 @@ export interface CompletionItem {
 	 * nor with themselves.
 	 */
 	additionalTextEdits?: TextEdit[];
+
+	/**
+	 * An optional set of characters that when pressed while this completion is active will accept it first and
+	 * then type that character. *Note* that all commit characters should have `length=1` and that superfluous
+	 * characters will be ignored.
+	 */
+	commitCharacters?: string[];
 
 	/**
 	 * An optional [command](#Command) that is executed *after* inserting this completion. *Note* that
@@ -852,6 +947,7 @@ export namespace CompletionList {
  * ```
  *
  * Note that markdown strings will be sanitized - that means html will be escaped.
+ * @deprecated use MarkupContent instead.
  */
 export type MarkedString = string | { language: string; value: string };
 
@@ -861,7 +957,7 @@ export namespace MarkedString {
 	 *
 	 * @param plainText The plain text.
 	 */
-	export function fromPlainText(plainText: string): MarkedString {
+	export function fromPlainText(plainText: string): string {
 		return plainText.replace(/[\\`*_{}[\]()#+\-.!]/g, "\\$&"); // escape markdown syntax tokens: http://daringfireball.net/projects/markdown/syntax#backslash
 	}
 }
@@ -873,7 +969,7 @@ export interface Hover {
 	/**
 	 * The hover's content
 	 */
-	contents: MarkedString | MarkedString[];
+	contents: MarkupContent | MarkedString | MarkedString[];
 
 	/**
 	 * An optional range
@@ -896,7 +992,7 @@ export interface ParameterInformation {
 	 * The human-readable doc-comment of this signature. Will be shown
 	 * in the UI but can be omitted.
 	 */
-	documentation?: string;
+	documentation?: string | MarkupContent;
 }
 
 /**
@@ -931,7 +1027,7 @@ export interface SignatureInformation {
 	 * The human-readable doc-comment of this signature. Will be shown
 	 * in the UI but can be omitted.
 	 */
-	documentation?: string;
+	documentation?: string | MarkupContent;
 
 	/**
 	 * The parameters of this signature.
@@ -985,9 +1081,9 @@ export interface SignatureHelp {
 /**
  * The definition of a symbol represented as one or many [locations](#Location).
  * For most programming languages there is only one location at which a symbol is
- * defined.
+ * defined. If no definition can be found `null` is returned.
  */
-export type Definition = Location | Location[];
+export type Definition = Location | Location[] | null;
 
 /**
  * Value-object that contains additional information when
@@ -1079,9 +1175,17 @@ export namespace SymbolKind {
 	export const Number: 16 = 16;
 	export const Boolean: 17 = 17;
 	export const Array: 18 = 18;
+	export const Object: 19 = 19;
+	export const Key: 20 = 20;
+	export const Null: 21 = 21;
+	export const EnumMember: 22 = 22;
+	export const Struct: 23 = 23;
+	export const Event: 24 = 24;
+	export const Operator: 25 = 25;
+	export const TypeParameter: 26 = 26;
 }
 
-export type SymbolKind = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18;
+export type SymbolKind = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 | 21 | 22 | 23 | 24 | 25 | 26;
 
 /**
  * Represents information about programming constructs like variables, classes,
@@ -1099,12 +1203,23 @@ export interface SymbolInformation {
 	kind: SymbolKind;
 
 	/**
-	 * The location of this symbol.
+	 * The location of this symbol. The location's range is used by a tool
+	 * to reveal the location in the editor. If the symbol is selected in the
+	 * tool the range's start information is used to position the cursor. So
+	 * the range usually spwans more then the actual symbol's name and does
+	 * normally include thinks like visibility modifiers.
+	 *
+	 * The range doesn't have to denote a node range in the sense of a abstract
+	 * syntax tree. It can therefore not be used to re-construct a hierarchy of
+	 * the symbols.
 	 */
 	location: Location;
 
 	/**
-	 * The name of the symbol containing this symbol.
+	 * The name of the symbol containing this symbol. This information is for
+	 * user interface purposes (e.g. to render a qaulifier in the user interface
+	 * if necessary). It can't be used to re-infer a hierarchy for the document
+	 * symbols.
 	 */
 	containerName?: string;
 }

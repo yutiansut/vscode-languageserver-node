@@ -4,9 +4,6 @@
  * ------------------------------------------------------------------------------------------ */
 'use strict';
 
-import * as cp from 'child_process';
-import ChildProcess = cp.ChildProcess;
-
 import {
 	workspace as Workspace, window as Window, languages as Languages, commands as Commands,
 	TextDocumentChangeEvent, TextDocument, Disposable, OutputChannel,
@@ -17,7 +14,7 @@ import {
 	FormattingOptions as VFormattingOptions, TextEdit as VTextEdit, WorkspaceEdit as VWorkspaceEdit, MessageItem,
 	Hover as VHover,
 	DocumentLink as VDocumentLink, TextDocumentWillSaveEvent,
-	WorkspaceFolder as VWorkspaceFolder
+	WorkspaceFolder as VWorkspaceFolder, CompletionContext as VCompletionContext
 } from 'vscode';
 
 import {
@@ -55,7 +52,8 @@ import {
 	RenameRequest, RenameParams,
 	DocumentLinkRequest, DocumentLinkResolveRequest, DocumentLinkRegistrationOptions,
 	ExecuteCommandRequest, ExecuteCommandParams, ExecuteCommandRegistrationOptions,
-	ApplyWorkspaceEditRequest, ApplyWorkspaceEditParams, ApplyWorkspaceEditResponse
+	ApplyWorkspaceEditRequest, ApplyWorkspaceEditParams, ApplyWorkspaceEditResponse,
+	MarkupKind, SymbolKind, CompletionItemKind
 } from 'vscode-languageserver-protocol';
 
 import * as c2p from './codeConverter';
@@ -183,11 +181,6 @@ function createConnection(input: any, output: any, errorHandler: ConnectionError
 	return result;
 }
 
-export interface StreamInfo {
-	writer: NodeJS.WritableStream;
-	reader: NodeJS.ReadableStream;
-}
-
 export interface ExecutableOptions {
 	cwd?: string;
 	stdio?: string | string[];
@@ -221,8 +214,6 @@ export interface NodeModule {
 	runtime?: string;
 	options?: ForkOptions;
 }
-
-export type ServerOptions = Executable | { run: Executable; debug: Executable; } | { run: NodeModule; debug: NodeModule } | NodeModule | (() => Thenable<ChildProcess | StreamInfo>);
 
 /**
  * An action to be performed when the connection is producing errors.
@@ -322,7 +313,7 @@ export enum RevealOutputChannelOn {
 }
 
 export interface ProvideCompletionItemsSignature {
-	(document: TextDocument, position: VPosition, token: CancellationToken): ProviderResult<VCompletionItem[] | VCompletionList>;
+	(document: TextDocument, position: VPosition, context: VCompletionContext, token: CancellationToken): ProviderResult<VCompletionItem[] | VCompletionList>;
 }
 
 export interface ResolveCompletionItemSignature {
@@ -394,7 +385,7 @@ export interface ResolveDocumentLinkSignature {
 }
 
 export interface NextSignature<P, R> {
-	(data: P, next: (data: P) => R): R;
+	(this: void, data: P, next: (data: P) => R): R;
 }
 
 export interface DidChangeConfigurationSignature {
@@ -402,7 +393,7 @@ export interface DidChangeConfigurationSignature {
 }
 
 export interface WorkspaceMiddleware {
-	didChangeConfiguration?: (sections: string[] | undefined, next: DidChangeConfigurationSignature) => void;
+	didChangeConfiguration?: (this: void, sections: string[] | undefined, next: DidChangeConfigurationSignature) => void;
 }
 
 export interface Middleware {
@@ -413,24 +404,24 @@ export interface Middleware {
 	didSave?: NextSignature<TextDocument, void>;
 	didClose?: NextSignature<TextDocument, void>;
 
-	provideCompletionItem?: (document: TextDocument, position: VPosition, token: CancellationToken, next: ProvideCompletionItemsSignature) => ProviderResult<VCompletionItem[] | VCompletionList>;
-	resolveCompletionItem?: (item: VCompletionItem, token: CancellationToken, next: ResolveCompletionItemSignature) => ProviderResult<VCompletionItem>;
-	provideHover?: (document: TextDocument, position: VPosition, token: CancellationToken, next: ProvideHoverSignature) => ProviderResult<VHover>;
-	provideSignatureHelp?: (document: TextDocument, position: VPosition, token: CancellationToken, next: ProvideSignatureHelpSignature) => ProviderResult<VSignatureHelp>;
-	provideDefinition?: (document: TextDocument, position: VPosition, token: CancellationToken, next: ProvideDefinitionSignature) => ProviderResult<VDefinition>;
-	provideReferences?: (document: TextDocument, position: VPosition, options: { includeDeclaration: boolean; }, token: CancellationToken, next: ProvideReferencesSignature) => ProviderResult<VLocation[]>;
-	provideDocumentHighlights?: (document: TextDocument, position: VPosition, token: CancellationToken, next: ProvideDocumentHighlightsSignature) => ProviderResult<VDocumentHighlight[]>;
-	provideDocumentSymbols?: (document: TextDocument, token: CancellationToken, next: ProvideDocumentSymbolsSignature) => ProviderResult<VSymbolInformation[]>;
-	provideWorkspaceSymbols?: (query: string, token: CancellationToken, next: ProvideWorkspaceSymbolsSignature) => ProviderResult<VSymbolInformation[]>;
-	provideCodeActions?: (document: TextDocument, range: VRange, context: VCodeActionContext, token: CancellationToken, next: ProvideCodeActionsSignature) => ProviderResult<VCommand[]>;
-	provideCodeLenses?: (document: TextDocument, token: CancellationToken, next: ProvideCodeLensesSignature) => ProviderResult<VCodeLens[]>;
-	resolveCodeLens?: (codeLens: VCodeLens, token: CancellationToken, next: ResolveCodeLensSignature) => ProviderResult<VCodeLens>;
-	provideDocumentFormattingEdits?: (document: TextDocument, options: VFormattingOptions, token: CancellationToken, next: ProvideDocumentFormattingEditsSignature) => ProviderResult<VTextEdit[]>;
-	provideDocumentRangeFormattingEdits?: (document: TextDocument, range: VRange, options: VFormattingOptions, token: CancellationToken, next: ProvideDocumentRangeFormattingEditsSignature) => ProviderResult<VTextEdit[]>;
-	provideOnTypeFormattingEdits?: (document: TextDocument, position: VPosition, ch: string, options: VFormattingOptions, token: CancellationToken, next: ProvideOnTypeFormattingEditsSignature) => ProviderResult<VTextEdit[]>;
-	provideRenameEdits?: (document: TextDocument, position: VPosition, newName: string, token: CancellationToken, next: ProvideRenameEditsSignature) => ProviderResult<VWorkspaceEdit>;
-	provideDocumentLinks?: (document: TextDocument, token: CancellationToken, next: ProvideDocumentLinksSignature) => ProviderResult<VDocumentLink[]>;
-	resolveDocumentLink?: (link: VDocumentLink, token: CancellationToken, next: ResolveDocumentLinkSignature) => ProviderResult<VDocumentLink>;
+	provideCompletionItem?: (this: void, document: TextDocument, position: VPosition, context: VCompletionContext, token: CancellationToken, next: ProvideCompletionItemsSignature) => ProviderResult<VCompletionItem[] | VCompletionList>;
+	resolveCompletionItem?: (this: void, item: VCompletionItem, token: CancellationToken, next: ResolveCompletionItemSignature) => ProviderResult<VCompletionItem>;
+	provideHover?: (this: void, document: TextDocument, position: VPosition, token: CancellationToken, next: ProvideHoverSignature) => ProviderResult<VHover>;
+	provideSignatureHelp?: (this: void, document: TextDocument, position: VPosition, token: CancellationToken, next: ProvideSignatureHelpSignature) => ProviderResult<VSignatureHelp>;
+	provideDefinition?: (this: void, document: TextDocument, position: VPosition, token: CancellationToken, next: ProvideDefinitionSignature) => ProviderResult<VDefinition>;
+	provideReferences?: (this: void, document: TextDocument, position: VPosition, options: { includeDeclaration: boolean; }, token: CancellationToken, next: ProvideReferencesSignature) => ProviderResult<VLocation[]>;
+	provideDocumentHighlights?: (this: void, document: TextDocument, position: VPosition, token: CancellationToken, next: ProvideDocumentHighlightsSignature) => ProviderResult<VDocumentHighlight[]>;
+	provideDocumentSymbols?: (this: void, document: TextDocument, token: CancellationToken, next: ProvideDocumentSymbolsSignature) => ProviderResult<VSymbolInformation[]>;
+	provideWorkspaceSymbols?: (this: void, query: string, token: CancellationToken, next: ProvideWorkspaceSymbolsSignature) => ProviderResult<VSymbolInformation[]>;
+	provideCodeActions?: (this: void, document: TextDocument, range: VRange, context: VCodeActionContext, token: CancellationToken, next: ProvideCodeActionsSignature) => ProviderResult<VCommand[]>;
+	provideCodeLenses?: (this: void, document: TextDocument, token: CancellationToken, next: ProvideCodeLensesSignature) => ProviderResult<VCodeLens[]>;
+	resolveCodeLens?: (this: void, codeLens: VCodeLens, token: CancellationToken, next: ResolveCodeLensSignature) => ProviderResult<VCodeLens>;
+	provideDocumentFormattingEdits?: (this: void, document: TextDocument, options: VFormattingOptions, token: CancellationToken, next: ProvideDocumentFormattingEditsSignature) => ProviderResult<VTextEdit[]>;
+	provideDocumentRangeFormattingEdits?: (this: void, document: TextDocument, range: VRange, options: VFormattingOptions, token: CancellationToken, next: ProvideDocumentRangeFormattingEditsSignature) => ProviderResult<VTextEdit[]>;
+	provideOnTypeFormattingEdits?: (this: void, document: TextDocument, position: VPosition, ch: string, options: VFormattingOptions, token: CancellationToken, next: ProvideOnTypeFormattingEditsSignature) => ProviderResult<VTextEdit[]>;
+	provideRenameEdits?: (this: void, document: TextDocument, position: VPosition, newName: string, token: CancellationToken, next: ProvideRenameEditsSignature) => ProviderResult<VWorkspaceEdit>;
+	provideDocumentLinks?: (this: void, document: TextDocument, token: CancellationToken, next: ProvideDocumentLinksSignature) => ProviderResult<VDocumentLink[]>;
+	resolveDocumentLink?: (this: void, link: VDocumentLink, token: CancellationToken, next: ResolveDocumentLinkSignature) => ProviderResult<VDocumentLink>;
 	workspace?: WorkspaceMiddleware;
 }
 
@@ -493,6 +484,63 @@ enum ClientState {
 	Stopping,
 	Stopped
 }
+
+const SupporedSymbolKinds: SymbolKind[] = [
+	SymbolKind.File,
+	SymbolKind.Module,
+	SymbolKind.Namespace,
+	SymbolKind.Package,
+	SymbolKind.Class,
+	SymbolKind.Method,
+	SymbolKind.Property,
+	SymbolKind.Field,
+	SymbolKind.Constructor,
+	SymbolKind.Enum,
+	SymbolKind.Interface,
+	SymbolKind.Function,
+	SymbolKind.Variable,
+	SymbolKind.Constant,
+	SymbolKind.String,
+	SymbolKind.Number,
+	SymbolKind.Boolean,
+	SymbolKind.Array,
+	SymbolKind.Object,
+	SymbolKind.Key,
+	SymbolKind.Null,
+	SymbolKind.EnumMember,
+	SymbolKind.Struct,
+	SymbolKind.Event,
+	SymbolKind.Operator,
+	SymbolKind.TypeParameter
+];
+
+const SupportedCompletionItemKinds: CompletionItemKind[] = [
+	CompletionItemKind.Text,
+	CompletionItemKind.Method,
+	CompletionItemKind.Function,
+	CompletionItemKind.Constructor,
+	CompletionItemKind.Field,
+	CompletionItemKind.Variable,
+	CompletionItemKind.Class,
+	CompletionItemKind.Interface,
+	CompletionItemKind.Module,
+	CompletionItemKind.Property,
+	CompletionItemKind.Unit,
+	CompletionItemKind.Value,
+	CompletionItemKind.Enum,
+	CompletionItemKind.Keyword,
+	CompletionItemKind.Snippet,
+	CompletionItemKind.Color,
+	CompletionItemKind.File,
+	CompletionItemKind.Reference,
+	CompletionItemKind.Folder,
+	CompletionItemKind.EnumMember,
+	CompletionItemKind.Constant,
+	CompletionItemKind.Struct,
+	CompletionItemKind.Event,
+	CompletionItemKind.Operator,
+	CompletionItemKind.TypeParameter
+];
 
 /**
  * A static feature. A static feature can't be dynamically activate via the
@@ -624,7 +672,7 @@ abstract class DocumentNotifiactions<P, E> implements DynamicFeature<TextDocumen
 
 	constructor(
 		protected _client: BaseLanguageClient, private _event: Event<E>,
-		protected _type: NotificationType<P, DocumentSelector>,
+		protected _type: NotificationType<P, TextDocumentRegistrationOptions>,
 		protected _middleware: NextSignature<E, void> | undefined,
 		protected _createParams: CreateParamsSignature<E, P>,
 		protected _selectorFilter?: (selectors: IterableIterator<DocumentSelector>, data: E) => boolean) {
@@ -983,7 +1031,8 @@ class WillSaveWaitUntilFeature implements DynamicFeature<TextDocumentRegistratio
 			let willSaveWaitUntil = (event: TextDocumentWillSaveEvent): Thenable<VTextEdit[]> => {
 				return this._client.sendRequest(WillSaveTextDocumentWaitUntilRequest.type,
 					this._client.code2ProtocolConverter.asWillSaveTextDocumentParams(event)).then((edits) => {
-						return this._client.protocol2CodeConverter.asTextEdits(edits);
+						let vEdits = this._client.protocol2CodeConverter.asTextEdits(edits);
+						return vEdits === void 0 ? [] : vEdits;
 					});
 			};
 			event.waitUntil(
@@ -1234,7 +1283,9 @@ class CompletionItemFeature extends TextDocumentFeature<CompletionRegistrationOp
 	public fillClientCapabilities(capabilites: ClientCapabilities): void {
 		let completion = ensure(ensure(capabilites, 'textDocument')!, 'completion')!;
 		completion.dynamicRegistration = true;
-		completion.completionItem = { snippetSupport: true };
+		completion.contextSupport = true;
+		completion.completionItem = { snippetSupport: true, commitCharactersSupport: true, documentationFormat: [MarkupKind.Markdown, MarkupKind.PlainText] };
+		completion.completionItemKind = { valueSet: SupportedCompletionItemKinds };
 	}
 
 	public initialize(capabilities: ServerCapabilities, documentSelector: DocumentSelector): void {
@@ -1250,8 +1301,8 @@ class CompletionItemFeature extends TextDocumentFeature<CompletionRegistrationOp
 	protected registerLanguageProvider(options: CompletionRegistrationOptions): Disposable {
 		let triggerCharacters = options.triggerCharacters || [];
 		let client = this._client;
-		let provideCompletionItems: ProvideCompletionItemsSignature = (document, position, token) => {
-			return client.sendRequest(CompletionRequest.type, client.code2ProtocolConverter.asTextDocumentPositionParams(document, position), token).then(
+		let provideCompletionItems: ProvideCompletionItemsSignature = (document, position, context, token) => {
+			return client.sendRequest(CompletionRequest.type, client.code2ProtocolConverter.asCompletionParams(document, position, context), token).then(
 				client.protocol2CodeConverter.asCompletionResult,
 				(error) => {
 					client.logFailedRequest(CompletionRequest.type, error);
@@ -1271,10 +1322,10 @@ class CompletionItemFeature extends TextDocumentFeature<CompletionRegistrationOp
 
 		let middleware = this._client.clientOptions.middleware!;
 		return Languages.registerCompletionItemProvider(options.documentSelector!, {
-			provideCompletionItems: (document: TextDocument, position: VPosition, token: CancellationToken): ProviderResult<VCompletionList | VCompletionItem[]> => {
+			provideCompletionItems: (document: TextDocument, position: VPosition, token: CancellationToken, context: VCompletionContext): ProviderResult<VCompletionList | VCompletionItem[]> => {
 				return middleware.provideCompletionItem
-					? middleware.provideCompletionItem(document, position, token, provideCompletionItems)
-					: provideCompletionItems(document, position, token);
+					? middleware.provideCompletionItem(document, position, context, token, provideCompletionItems)
+					: provideCompletionItems(document, position, context, token);
 			},
 			resolveCompletionItem: options.resolveProvider
 				? (item: VCompletionItem, token: CancellationToken): ProviderResult<VCompletionItem> => {
@@ -1294,7 +1345,9 @@ class HoverFeature extends TextDocumentFeature<TextDocumentRegistrationOptions> 
 	}
 
 	public fillClientCapabilities(capabilites: ClientCapabilities): void {
-		ensure(ensure(capabilites, 'textDocument')!, 'hover')!.dynamicRegistration = true;
+		const hoverCapability = (ensure(ensure(capabilites, 'textDocument')!, 'hover')!);
+		hoverCapability.dynamicRegistration = true;
+		hoverCapability.contentFormat = [MarkupKind.Markdown, MarkupKind.PlainText];
 	}
 
 	public initialize(capabilities: ServerCapabilities, documentSelector: DocumentSelector): void {
@@ -1336,7 +1389,9 @@ class SignatureHelpFeature extends TextDocumentFeature<SignatureHelpRegistration
 	}
 
 	public fillClientCapabilities(capabilites: ClientCapabilities): void {
-		ensure(ensure(capabilites, 'textDocument')!, 'signatureHelp')!.dynamicRegistration = true;
+		let config = ensure(ensure(capabilites, 'textDocument')!, 'signatureHelp')!;
+		config.dynamicRegistration = true;
+		config.signatureInformation = { documentationFormat: [MarkupKind.Markdown, MarkupKind.PlainText] };
 	}
 
 	public initialize(capabilities: ServerCapabilities, documentSelector: DocumentSelector): void {
@@ -1505,7 +1560,11 @@ class DocumentSymbolFeature extends TextDocumentFeature<TextDocumentRegistration
 	}
 
 	public fillClientCapabilities(capabilites: ClientCapabilities): void {
-		ensure(ensure(capabilites, 'textDocument')!, 'documentSymbol')!.dynamicRegistration = true;
+		let symbolCapabilities = ensure(ensure(capabilites, 'textDocument')!, 'documentSymbol')!;
+		symbolCapabilities.dynamicRegistration = true;
+		symbolCapabilities.symbolKind = {
+			valueSet: SupporedSymbolKinds
+		}
 	}
 
 	public initialize(capabilities: ServerCapabilities, documentSelector: DocumentSelector): void {
@@ -1547,7 +1606,11 @@ class WorkspaceSymbolFeature extends WorkspaceFeature<undefined> {
 	}
 
 	public fillClientCapabilities(capabilites: ClientCapabilities): void {
-		ensure(ensure(capabilites, 'workspace')!, 'symbol')!.dynamicRegistration = true;
+		let symbolCapabilities = ensure(ensure(capabilites, 'workspace')!, 'symbol')!;
+		symbolCapabilities.dynamicRegistration = true;
+		symbolCapabilities.symbolKind = {
+			valueSet: SupporedSymbolKinds
+		};
 	}
 
 	public initialize(capabilities: ServerCapabilities): void {
@@ -1861,7 +1924,7 @@ class RenameFeature extends TextDocumentFeature<TextDocumentRegistrationOptions>
 				client.protocol2CodeConverter.asWorkspaceEdit,
 				(error: ResponseError<void>) => {
 					client.logFailedRequest(RenameRequest.type, error);
-					Promise.resolve(new Error(error.message));
+					Promise.reject(new Error(error.message));
 				}
 			);
 		};
@@ -2113,6 +2176,14 @@ class ExecuteCommandFeature implements DynamicFeature<ExecuteCommandRegistration
 export interface MessageTransports {
 	reader: MessageReader;
 	writer: MessageWriter;
+	detached?: boolean;
+}
+
+export namespace MessageTransports {
+	export function is(value: any): value is MessageTransports {
+		let candidate: MessageTransports = value;
+		return candidate && MessageReader.is(value.reader) && MessageWriter.is(value.writer);
+	}
 }
 
 export abstract class BaseLanguageClient {
@@ -2124,6 +2195,7 @@ export abstract class BaseLanguageClient {
 	private _state: ClientState;
 	private _onReady: Promise<void>;
 	private _onReadyCallbacks: { resolve: () => void; reject: (error: any) => void; };
+	private _onStop: Thenable<void> | undefined;
 	private _connectionPromise: Thenable<IConnection> | undefined;
 	private _resolvedConnection: IConnection | undefined;
 	private _initializeResult: InitializeResult | undefined;
@@ -2189,6 +2261,7 @@ export abstract class BaseLanguageClient {
 		this._onReady = new Promise<void>((resolve, reject) => {
 			this._onReadyCallbacks = { resolve, reject };
 		});
+		this._onStop = undefined;
 		this._telemetryEmitter = new Emitter<any>();
 		this._stateChangeEmitter = new Emitter<StateChangeEvent>();
 		this._tracer = {
@@ -2575,14 +2648,18 @@ export abstract class BaseLanguageClient {
 			this.state = ClientState.Stopped;
 			return Promise.resolve();
 		}
+		if (this.state === ClientState.Stopping && this._onStop) {
+			return this._onStop;
+		}
 		this.state = ClientState.Stopping;
 		this.cleanUp();
 		// unkook listeners
-		return this.resolveConnection().then(connection => {
+		return this._onStop = this.resolveConnection().then(connection => {
 			return connection.shutdown().then(() => {
 				connection.exit();
 				connection.dispose();
 				this.state = ClientState.Stopped;
+				this._onStop = undefined;
 				this._connectionPromise = undefined;
 				this._resolvedConnection = undefined;
 				if (this._outputChannel) {
@@ -2788,6 +2865,7 @@ export abstract class BaseLanguageClient {
 
 	private computeClientCapabilities(): ClientCapabilities {
 		let result: ClientCapabilities = {};
+		ensure(result, 'workspace')!.applyEdit = true;
 		for (let feature of this._features) {
 			feature.fillClientCapabilities(result);
 		}

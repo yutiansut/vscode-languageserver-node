@@ -13,6 +13,7 @@ import {
 	MessageReader, MessageWriter, Logger, ConnectionStrategy,
 	StreamMessageReader, StreamMessageWriter, IPCMessageReader, IPCMessageWriter,
 	createClientPipeTransport, createServerPipeTransport, generateRandomPipeName, DataCallback,
+	createClientSocketTransport, createServerSocketTransport,
 	createMessageConnection, Tracer
 } from 'vscode-jsonrpc';
 
@@ -26,6 +27,7 @@ export {
 	StreamMessageReader, StreamMessageWriter,
 	IPCMessageReader, IPCMessageWriter,
 	createClientPipeTransport, createServerPipeTransport, generateRandomPipeName, DataCallback,
+	createClientSocketTransport, createServerSocketTransport,
 	Tracer
 }
 export * from 'vscode-languageserver-types';
@@ -34,6 +36,7 @@ export * from './protocol';
 import * as config from './protocol.configuration.proposed';
 import * as folders from './protocol.workspaceFolders.proposed';
 import * as color from './protocol.colorProvider.proposed';
+import { InitializeParams } from './protocol';
 
 export namespace Proposed {
 	export type ConfigurationClientCapabilities = config.ConfigurationClientCapabilities;
@@ -45,8 +48,9 @@ export namespace Proposed {
 		export type MiddlewareSignature = config.ConfigurationRequest.MiddlewareSignature;
 	};
 
-	export type WorkspaceFoldersInitializeParams = folders.WorkspaceFoldersInitializeParams;
+	export type WorkspaceFoldersInitializeParams = InitializeParams & folders.WorkspaceFoldersInitializeParams;
 	export type WorkspaceFoldersClientCapabilities = folders.WorkspaceFoldersClientCapabilities;
+	export type WorkspaceFoldersServerCapabilities = folders.WorkspaceFoldersServerCapabilities;
 	export type WorkspaceFolder = folders.WorkspaceFolder;
 	export type WorkspaceFoldersChangeEvent = folders.WorkspaceFoldersChangeEvent;
 	export type DidChangeWorkspaceFoldersParams = folders.DidChangeWorkspaceFoldersParams;
@@ -61,16 +65,18 @@ export namespace Proposed {
 		export type MiddlewareSignature = folders.DidChangeWorkspaceFoldersNotification.MiddlewareSignature;
 	}
 
-
 	export type ColorProviderOptions = color.ColorProviderOptions;
 	export type DocumentColorParams = color.DocumentColorParams;
+	export type ColorPresentationParams = color.ColorPresentationParams;
 	export type Color = color.Color;
 	export type ColorInformation = color.ColorInformation;
+	export type ColorPresentation = color.ColorPresentation;
 	export type ColorServerCapabilities = color.ServerCapabilities;
 	export const DocumentColorRequest = color.DocumentColorRequest;
+	export const ColorPresentationRequest = color.ColorPresentationRequest;
 }
 
-export interface ProtocolConnetion {
+export interface ProtocolConnection {
 
 	/**
 	 * Sends a request and returns a promise resolving to the result of the request.
@@ -225,6 +231,11 @@ export interface ProtocolConnetion {
 	listen(): void;
 }
 
-export function createProtocolConnection(reader: MessageReader, writer: MessageWriter, logger: Logger, strategy?: ConnectionStrategy): ProtocolConnetion {
+/**
+ * @deprecated Use ProtocolConnection instead.
+ */
+export type ProtocolConnetion = ProtocolConnection;
+
+export function createProtocolConnection(reader: MessageReader, writer: MessageWriter, logger: Logger, strategy?: ConnectionStrategy): ProtocolConnection {
 	return createMessageConnection(reader, writer, logger, strategy);
 }

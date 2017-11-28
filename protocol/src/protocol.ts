@@ -14,7 +14,8 @@ import {
 	TextDocumentIdentifier, VersionedTextDocumentIdentifier, TextDocumentItem, TextDocumentSaveReason,
 	CompletionItem, CompletionList, Hover, SignatureHelp,
 	Definition, ReferenceContext, DocumentHighlight, DocumentSymbolParams,
-	SymbolInformation, CodeLens, CodeActionContext, FormattingOptions, DocumentLink
+	SymbolInformation, CodeLens, CodeActionContext, FormattingOptions, DocumentLink, MarkupKind,
+	SymbolKind, CompletionItemKind
 } from 'vscode-languageserver-types';
 
 /**
@@ -144,7 +145,6 @@ export interface TextDocumentPositionParams {
 /**
  * Workspace specific client capabilities.
  */
-
 export interface WorkspaceClientCapabilities {
 	/**
 	 * The client supports applying batch edits
@@ -191,6 +191,23 @@ export interface WorkspaceClientCapabilities {
 		 * Symbol request supports dynamic registration.
 		 */
 		dynamicRegistration?: boolean;
+
+		/**
+		 * Specific capabilities for the `SymbolKind` in the `workspace/symbol` request.
+		 */
+		symbolKind?: {
+			/**
+			 * The symbol kind values the client supports. When this
+			 * property exists the client also guarantees that it will
+			 * handle values outside its set gracefully and falls back
+			 * to a default value when unknown.
+			 *
+			 * If this property is not present the client only supports
+			 * the symbol kinds from `File` to `Array` as defined in
+			 * the initial version of the protocol.
+			 */
+			valueSet?: SymbolKind[];
+		}
 	};
 
 	/**
@@ -264,7 +281,38 @@ export interface TextDocumentClientCapabilities {
 			 * that is typing in one will update others too.
 			 */
 			snippetSupport?: boolean;
-		}
+
+			/**
+			 * Client supports commit characters on a completion item.
+			 */
+			commitCharactersSupport?: boolean
+
+			/**
+			 * Client supports the follow content formats for the documentation
+			 * property. The order describes the preferred format of the client.
+			 */
+			documentationFormat?: MarkupKind[];
+		},
+
+		completionItemKind?: {
+			/**
+			 * The completion item kind values the client supports. When this
+			 * property exists the client also guarantees that it will
+			 * handle values outside its set gracefully and falls back
+			 * to a default value when unknown.
+			 *
+			 * If this property is not present the client only supports
+			 * the completion items kinds from `Text` to `Reference` as defined in
+			 * the initial version of the protocol.
+			 */
+			valueSet?: CompletionItemKind[];
+		},
+
+		/**
+		 * The client supports to send additional context information for a
+		 * `textDocument/completion` requestion.
+		 */
+		contextSupport?: boolean;
 	};
 
 	/**
@@ -275,6 +323,12 @@ export interface TextDocumentClientCapabilities {
 		 * Whether hover supports dynamic registration.
 		 */
 		dynamicRegistration?: boolean;
+
+		/**
+		 * Client supports the follow content formats for the content
+		 * property. The order describes the preferred format of the client.
+		 */
+		contentFormat?: MarkupKind[];
 	};
 
 	/**
@@ -285,6 +339,18 @@ export interface TextDocumentClientCapabilities {
 		 * Whether signature help supports dynamic registration.
 		 */
 		dynamicRegistration?: boolean;
+
+		/**
+		 * The client supports the following `SignatureInformation`
+		 * specific properties.
+		 */
+		signatureInformation?: {
+			/**
+			 * Client supports the follow content formats for the documentation
+			 * property. The order describes the preferred format of the client.
+			 */
+			documentationFormat?: MarkupKind[];
+		};
 	};
 
 	/**
@@ -315,6 +381,23 @@ export interface TextDocumentClientCapabilities {
 		 * Whether document symbol supports dynamic registration.
 		 */
 		dynamicRegistration?: boolean;
+
+		/**
+		 * Specific capabilities for the `SymbolKind`.
+		 */
+		symbolKind?: {
+			/**
+			 * The symbol kind values the client supports. When this
+			 * property exists the client also guarantees that it will
+			 * handle values outside its set gracefully and falls back
+			 * to a default value when unknown.
+			 *
+			 * If this property is not present the client only supports
+			 * the symbol kinds from `File` to `Array` as defined in
+			 * the initial version of the protocol.
+			 */
+			valueSet?: SymbolKind[];
+		}
 	};
 
 	/**
@@ -460,15 +543,22 @@ export interface TextDocumentRegistrationOptions {
  */
 export interface CompletionOptions {
 	/**
+	 * Most tools trigger completion request automatically without explicitly requesting
+	 * it using a keyboard shortcut (e.g. Ctrl+Space). Typically they do so when the user
+	 * starts to type an identifier. For example if the user types `c` in a JavaScript file
+	 * code complete will automatically pop up present `console` besides others as a
+	 * completion item. Characters that make up identifiers don't need to be listed here.
+	 *
+	 * If code complete should automatically be trigger on characters not being valid inside
+	 * an identifier (for example `.` in JavaScript) list them in `triggerCharacters`.
+	 */
+	triggerCharacters?: string[];
+
+	/**
 	 * The server provides support to resolve additional
 	 * information for a completion item.
 	 */
 	resolveProvider?: boolean;
-
-	/**
-	 * The characters that trigger completion automatically.
-	 */
-	triggerCharacters?: string[];
 }
 /**
  * Signature help options.
@@ -878,7 +968,7 @@ export interface ShowMessageRequestParams {
  * and a set of options actions to the user.
  */
 export namespace ShowMessageRequest {
-	export const type = new RequestType<ShowMessageRequestParams, MessageActionItem, void, void>('window/showMessageRequest');
+	export const type = new RequestType<ShowMessageRequestParams, MessageActionItem | null, void, void>('window/showMessageRequest');
 }
 
 /**
@@ -930,7 +1020,11 @@ export interface DidOpenTextDocumentParams {
  * The document open notification is sent from the client to the server to signal
  * newly opened text documents. The document's truth is now managed by the client
  * and the server must not try to read the document's truth using the document's
- * uri.
+ * uri. Open in this sense means it is managed by the client. It doesn't necessarily
+ * mean that its content is presented in an editor. An open notification must not
+ * be sent more than once without a corresponding close notification send before.
+ * This means open and close notification must be balanced and the max open count
+ * is one.
  */
 export namespace DidOpenTextDocumentNotification {
 	export const type = new NotificationType<DidOpenTextDocumentParams, TextDocumentRegistrationOptions>('textDocument/didOpen');
@@ -985,9 +1079,12 @@ export interface DidCloseTextDocumentParams {
 
 /**
  * The document close notification is sent from the client to the server when
- * the document got closed in the client. The document's truth now exists
- * where the document's uri points to (e.g. if the document's uri is a file uri
- * the truth now exists on disk).
+ * the document got closed in the client. The document's truth now exists where
+ * the document's uri points to (e.g. if the document's uri is a file uri the
+ * truth now exists on disk). As with the open notification the close notification
+ * is about managing the document's content. Receiving a close notification
+ * doesn't mean that the document was open in an editor before. A close
+ * notification requires a previous open notifaction to be sent.
  */
 export namespace DidCloseTextDocumentNotification {
 	export const type = new NotificationType<DidCloseTextDocumentParams, TextDocumentRegistrationOptions>('textDocument/didClose');
@@ -1055,7 +1152,7 @@ export namespace WillSaveTextDocumentNotification {
  * reliable.
  */
 export namespace WillSaveTextDocumentWaitUntilRequest {
-	export const type = new RequestType<WillSaveTextDocumentParams, TextEdit[], void, TextDocumentRegistrationOptions>('textDocument/willSaveWaitUntil');
+	export const type = new RequestType<WillSaveTextDocumentParams, TextEdit[] | null, void, TextDocumentRegistrationOptions>('textDocument/willSaveWaitUntil');
 }
 
 //---- File eventing ----
@@ -1187,13 +1284,65 @@ export interface CompletionRegistrationOptions extends TextDocumentRegistrationO
 }
 
 /**
+ * How a completion was triggered
+ */
+export namespace CompletionTriggerKind {
+	/**
+	 * Completion was triggered by typing an identifier (24x7 code
+	 * complete), manual invocation (e.g Ctrl+Space) or via API.
+	 */
+	export const Invoked: 1 = 1;
+
+	/**
+	 * Completion was triggered by a trigger character specified by
+	 * the `triggerCharacters` properties of the `CompletionRegistrationOptions`.
+	 */
+	export const TriggerCharacter: 2 = 2;
+}
+export type CompletionTriggerKind = 1 | 2;
+
+
+/**
+ * Contains additional information about the context in which a completion request is triggered.
+ */
+export interface CompletionContext {
+	/**
+	 * How the completion was triggered.
+	 */
+	triggerKind: CompletionTriggerKind;
+
+	/**
+	 * The trigger character (a single character) that has trigger code complete.
+	 * Is undefined if `triggerKind !== CompletionTriggerKind.TriggerCharacter`
+	 */
+	triggerCharacter?: string;
+}
+
+/**
+ * Completion parameters
+ */
+export interface CompletionParams extends TextDocumentPositionParams {
+
+	/**
+	 * The completion context. This is only available it the client specifies
+	 * to send this using `ClientCapabilities.textDocument.completion.contextSupport === true`
+	 */
+	context?: CompletionContext;
+}
+
+/**
  * Request to request completion at a given text document position. The request's
  * parameter is of type [TextDocumentPosition](#TextDocumentPosition) the response
  * is of type [CompletionItem[]](#CompletionItem) or [CompletionList](#CompletionList)
  * or a Thenable that resolves to such.
+ *
+ * The request can delay the computation of the [`detail`](#CompletionItem.detail)
+ * and [`documentation`](#CompletionItem.documentation) properties to the `completionItem/resolve`
+ * request. However, properties that are needed for the inital sorting and filtering, like `sortText`,
+ * `filterText`, `insertText`, and `textEdit`, must not be changed during resolve.
  */
 export namespace CompletionRequest {
-	export const type = new RequestType<TextDocumentPositionParams, CompletionItem[] | CompletionList, void, CompletionRegistrationOptions>('textDocument/completion');
+	export const type = new RequestType<CompletionParams, CompletionItem[] | CompletionList | null, void, CompletionRegistrationOptions>('textDocument/completion');
 }
 
 /**
@@ -1213,7 +1362,7 @@ export namespace CompletionResolveRequest {
  * type [Hover](#Hover) or a Thenable that resolves to such.
  */
 export namespace HoverRequest {
-	export const type = new RequestType<TextDocumentPositionParams, Hover, void, TextDocumentRegistrationOptions>('textDocument/hover');
+	export const type = new RequestType<TextDocumentPositionParams, Hover | null, void, TextDocumentRegistrationOptions>('textDocument/hover');
 }
 
 //---- SignatureHelp ----------------------------------
@@ -1225,7 +1374,7 @@ export interface SignatureHelpRegistrationOptions extends TextDocumentRegistrati
 }
 
 export namespace SignatureHelpRequest {
-	export const type = new RequestType<TextDocumentPositionParams, SignatureHelp, void, SignatureHelpRegistrationOptions>('textDocument/signatureHelp');
+	export const type = new RequestType<TextDocumentPositionParams, SignatureHelp | null, void, SignatureHelpRegistrationOptions>('textDocument/signatureHelp');
 }
 
 //---- Goto Definition -------------------------------------
@@ -1237,7 +1386,7 @@ export namespace SignatureHelpRequest {
  * Thenable that resolves to such.
  */
 export namespace DefinitionRequest {
-	export const type = new RequestType<TextDocumentPositionParams, Definition, void, TextDocumentRegistrationOptions>('textDocument/definition');
+	export const type = new RequestType<TextDocumentPositionParams, Definition | null, void, TextDocumentRegistrationOptions>('textDocument/definition');
 }
 
 //---- Reference Provider ----------------------------------
@@ -1256,7 +1405,7 @@ export interface ReferenceParams extends TextDocumentPositionParams {
  * [Location[]](#Location) or a Thenable that resolves to such.
  */
 export namespace ReferencesRequest {
-	export const type = new RequestType<ReferenceParams, Location[], void, TextDocumentRegistrationOptions>('textDocument/references');
+	export const type = new RequestType<ReferenceParams, Location[] | null, void, TextDocumentRegistrationOptions>('textDocument/references');
 }
 
 //---- Document Highlight ----------------------------------
@@ -1268,7 +1417,7 @@ export namespace ReferencesRequest {
  * (#DocumentHighlight) or a Thenable that resolves to such.
  */
 export namespace DocumentHighlightRequest {
-	export const type = new RequestType<TextDocumentPositionParams, DocumentHighlight[], void, TextDocumentRegistrationOptions>('textDocument/documentHighlight');
+	export const type = new RequestType<TextDocumentPositionParams, DocumentHighlight[] | null, void, TextDocumentRegistrationOptions>('textDocument/documentHighlight');
 }
 
 //---- Document Symbol Provider ---------------------------
@@ -1280,7 +1429,7 @@ export namespace DocumentHighlightRequest {
  * that resolves to such.
  */
 export namespace DocumentSymbolRequest {
-	export const type = new RequestType<DocumentSymbolParams, SymbolInformation[], void, TextDocumentRegistrationOptions>('textDocument/documentSymbol');
+	export const type = new RequestType<DocumentSymbolParams, SymbolInformation[] | null, void, TextDocumentRegistrationOptions>('textDocument/documentSymbol');
 }
 
 //---- Workspace Symbol Provider ---------------------------
@@ -1292,7 +1441,7 @@ export namespace DocumentSymbolRequest {
  * resolves to such.
  */
 export namespace WorkspaceSymbolRequest {
-	export const type = new RequestType<WorkspaceSymbolParams, SymbolInformation[], void, void>('workspace/symbol');
+	export const type = new RequestType<WorkspaceSymbolParams, SymbolInformation[] | null, void, void>('workspace/symbol');
 }
 
 //---- Code Action Provider ----------------------------------
@@ -1323,7 +1472,7 @@ export interface CodeActionParams {
  * A request to provide commands for the given text document and range.
  */
 export namespace CodeActionRequest {
-	export const type = new RequestType<CodeActionParams, Command[], void, TextDocumentRegistrationOptions>('textDocument/codeAction');
+	export const type = new RequestType<CodeActionParams, Command[] | null, void, TextDocumentRegistrationOptions>('textDocument/codeAction');
 }
 
 //---- Code Lens Provider -------------------------------------------
@@ -1348,7 +1497,7 @@ export interface CodeLensRegistrationOptions extends TextDocumentRegistrationOpt
  * A request to provide code lens for the given text document.
  */
 export namespace CodeLensRequest {
-	export const type = new RequestType<CodeLensParams, CodeLens[], void, CodeLensRegistrationOptions>('textDocument/codeLens');
+	export const type = new RequestType<CodeLensParams, CodeLens[] | null, void, CodeLensRegistrationOptions>('textDocument/codeLens');
 }
 
 /**
@@ -1376,7 +1525,7 @@ export interface DocumentFormattingParams {
  * A request to to format a whole document.
  */
 export namespace DocumentFormattingRequest {
-	export const type = new RequestType<DocumentFormattingParams, TextEdit[], void, TextDocumentRegistrationOptions>('textDocument/formatting');
+	export const type = new RequestType<DocumentFormattingParams, TextEdit[] | null, void, TextDocumentRegistrationOptions>('textDocument/formatting');
 }
 
 export interface DocumentRangeFormattingParams {
@@ -1400,7 +1549,7 @@ export interface DocumentRangeFormattingParams {
  * A request to to format a range in a document.
  */
 export namespace DocumentRangeFormattingRequest {
-	export const type = new RequestType<DocumentRangeFormattingParams, TextEdit[], void, TextDocumentRegistrationOptions>('textDocument/rangeFormatting');
+	export const type = new RequestType<DocumentRangeFormattingParams, TextEdit[] | null, void, TextDocumentRegistrationOptions>('textDocument/rangeFormatting');
 }
 
 export interface DocumentOnTypeFormattingParams {
@@ -1435,7 +1584,7 @@ export interface DocumentOnTypeFormattingRegistrationOptions extends TextDocumen
  * A request to format a document on type.
  */
 export namespace DocumentOnTypeFormattingRequest {
-	export const type = new RequestType<DocumentOnTypeFormattingParams, TextEdit[], void, DocumentOnTypeFormattingRegistrationOptions>('textDocument/onTypeFormatting');
+	export const type = new RequestType<DocumentOnTypeFormattingParams, TextEdit[] | null, void, DocumentOnTypeFormattingRegistrationOptions>('textDocument/onTypeFormatting');
 }
 
 //---- Rename ----------------------------------------------
@@ -1463,7 +1612,7 @@ export interface RenameParams {
  * A request to rename a symbol.
  */
 export namespace RenameRequest {
-	export const type = new RequestType<RenameParams, WorkspaceEdit, void, TextDocumentRegistrationOptions>('textDocument/rename');
+	export const type = new RequestType<RenameParams, WorkspaceEdit | null, void, TextDocumentRegistrationOptions>('textDocument/rename');
 }
 
 //---- Document Links ----------------------------------------------
@@ -1485,7 +1634,7 @@ export interface DocumentLinkRegistrationOptions extends TextDocumentRegistratio
  * A request to provide document links
  */
 export namespace DocumentLinkRequest {
-	export const type = new RequestType<DocumentLinkParams, DocumentLink[], void, DocumentLinkRegistrationOptions>('textDocument/documentLink');
+	export const type = new RequestType<DocumentLinkParams, DocumentLink[] | null, void, DocumentLinkRegistrationOptions>('textDocument/documentLink');
 }
 
 /**
@@ -1522,7 +1671,7 @@ export interface ExecuteCommandRegistrationOptions extends ExecuteCommandOptions
  * a workspace edit which the client will apply to the workspace.
  */
 export namespace ExecuteCommandRequest {
-	export const type = new RequestType<ExecuteCommandParams, any, void, ExecuteCommandRegistrationOptions>('workspace/executeCommand');
+	export const type = new RequestType<ExecuteCommandParams, any | null, void, ExecuteCommandRegistrationOptions>('workspace/executeCommand');
 }
 
 //---- Apply Edit request ----------------------------------------
@@ -1531,6 +1680,13 @@ export namespace ExecuteCommandRequest {
  * The parameters passed via a apply workspace edit request.
  */
 export interface ApplyWorkspaceEditParams {
+	/**
+	 * An optional label of the workspace edit. This label is
+	 * presented in the user interface for example on an undo
+	 * stack to undo the workspace edit.
+	 */
+	label?: string;
+
 	/**
 	 * The edits to apply.
 	 */

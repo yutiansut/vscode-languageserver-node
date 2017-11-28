@@ -4,11 +4,16 @@ The document color request is sent from the client to the server to list all col
 
 Clients can use the result to decorate color references in an editor. For example:
 - Color boxes showing the actual color next to the reference
-- Color pickers when a color references are edited
+- Show a color picker when a color reference is edited
+
+The color presentation request is sent from the client to the server to obtain a list of presentations for a color value at a given location.
+Clients can use the result to
+- modify a color reference.
+- show in a color picker and let users pick one of the presentations
 
 _Server Capability_:
 
-The server sets the following server capability if it is able to handle `textDocument/documentColor` requests:
+The server sets the following server capability if it is able to handle `textDocument/documentColor` and `textDocument/colorPresentation` requests:
 
 ```ts
 /**
@@ -45,13 +50,20 @@ _Response_:
 * result: `ColorInformation[]` defined as follows:
 ```ts
 interface ColorInformation {
+	/**
+	 * The range in the document where this color appers.
+	 */
 	range: Range;
+
+	/**
+	 * The actual color value for this color range.
+	 */
 	color: Color;
 }
 /**
  * Represents a color in RGBA space.
  */
-class Color {
+interface Color {
 
 	/**
 	 * The red component of this color in the range [0-1].
@@ -75,3 +87,54 @@ class Color {
 }
 ```
 * error: code and message set in case an exception happens during the 'textDocument/documentColor' request
+
+
+
+_Request_:
+
+* method: 'textDocument/colorPresentation'
+* params: `DocumentColorParams` defined as follows
+
+```ts
+interface ColorPresentationParams {
+	/**
+	 * The text document.
+	 */
+	textDocument: TextDocumentIdentifier;
+
+	/**
+	 * The color information to request presentations for.
+	 */
+	colorInfo: Color;
+
+	/**
+	 * The range where the color would be inserted. Serves as a context.
+	 */
+	range: Range;
+}
+```
+
+_Response_:
+* result: `ColorPresentation[]` defined as follows:
+```ts
+interface ColorPresentation {
+	/**
+	 * The label of this color presentation. It will be shown on the color
+	 * picker header. By default this is also the text that is inserted when selecting
+	 * this color presentation.
+	 */
+	label: string;
+	/**
+	 * An [edit](#TextEdit) which is applied to a document when selecting
+	 * this presentation for the color.  When `falsy` the [label](#ColorPresentation.label)
+	 * is used.
+	 */
+	textEdit?: TextEdit;
+	/**
+	 * An optional array of additional [text edits](#TextEdit) that are applied when
+	 * selecting this color presentation. Edits must not overlap with the main [edit](#ColorPresentation.textEdit) nor with themselves.
+	 */
+	additionalTextEdits?: TextEdit[];
+}
+```
+* error: code and message set in case an exception happens during the 'textDocument/colorPresentation' request
